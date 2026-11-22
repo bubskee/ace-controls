@@ -1,108 +1,58 @@
 # Notes on ACE
 
-*"Transformers Converge to Invariant Algorithmic Cores", arXiv 2602.22600v3, code at commit 527948b.*
+*“Transformers Converge to Invariant Algorithmic Cores,” arXiv v3. These controls use your [released code at commit 527948b](https://github.com/joshseth/cores/tree/527948bb3573199d123d331cb2adc1e54647b317).*
 
-- Short version: ACE is a useful tool. The paper's story (convergence, invariance) is its weakest part.
-- How this was made: controls run with Claude; blind review and audit of the controls by Astra. No outside check. Every number has a script that calls your functions.
+The two-site IOI experiment is what got me excited about ACE. You fit a map on ordinary sentence pairs, edit the repeated-name state in a held-out sentence, and predict how the final-token state changes. That prediction can fail. Across six models, your map explains 61–87% of the measured change **in the selected final-token coordinates** and beats a fixed signed response. I’d lead with that result. [Paper, §6 and Table A11](https://arxiv.org/abs/2602.22600v3)
 
-## Reproduces
+## What do the gradients add on IOI?
 
-- Markov: all 12 seeds match your saved ladder.
-- Modular addition: retrained at paper settings (CPU, 3 models). Grokking, core sizes, mode counts follow your figures.
-- IOI: `golden.py` gives your GPT-2 Small numbers to 3 decimals. Rebuilt cores match your saved scores in GPT-2 S/M/L, LLaMA-3.1-8B, Gemma-2-9B.
+- Your ACE extraction uses role-swap pairs. The published PCA baseline uses unpaired activations. I gave PCA the same pairs by taking the uncentered SVD of their activation differences, matching ACE’s treatment of those differences.
+- The comparison below uses your selected layers and ranks. The entries are held-out name-preference AUC after removing both subspaces. Chance is .5. [Control script](controls/ioi_ladder.py) · [Archived GPU results](results/ioi/)
 
-## Where ACE earns its place
+| Model | S2 + END rank | ACE | Pair-difference SVD | Unpaired PCA | Gradients only |
+|---|---:|---:|---:|---:|---:|
+| GPT-2 Small | 14 + 2 | .608 | .653 | .747 | .850 |
+| GPT-2 Medium | 12 + 37 | .529 | .571 | .929 | .925 |
+| GPT-2 Large | 24 + 38 | .600 | .676 | .925 | .958 |
+| LLaMA-3.1-8B | 32 + 35 | .645 | .768 | 1.000 | .984 |
+| Gemma-2-9B | 64 + 79 | .686 | .834 | .969 | .955 |
 
-**IOI against a pairing-aware baseline**
+- **Keep and flip.** At these ranks, pair-difference SVD alone keeps held-out AUC at or above .998 and brings it to .067 or below when either site is flipped. At smaller ranks the ordering can matter. In Gemma, flipping the repeated-name site at rank four gives .37 with ACE and .83 with pair-difference SVD. [Gemma rank curve](results/ioi/ioi_ladder_gemma-2-9b.json)
+- **Remove.** ACE brings joint removal closer to chance in all five models. In Gemma, going from unpaired to paired PCA gains .135 AUC toward chance. Adding gradient information gains another .148. Only GPT-2 Medium reaches the paper’s .55 cutoff on these held-out prompts at the published ranks. Selecting layers and ranks independently for each method would tell us how much of the advantage survives an equal search budget.
+- **Transfer.** In a separate three-GPT-2 check with a smaller extraction name pool, I compared the carried map with a target-only fit given exactly the same calibration pairs. Medium→Small explained .835 of the measured swap response versus .744 for target-only. Small→Large gave .234 versus .614. The target-only fit won in four of six directions. Rotating the source map hurt prediction in all six. I’d like to see the matched-calibration comparison across families. [Transfer scores](results/transfer/transfer_intervals.log)
 
-- Your PCA baseline is unpaired. ACE gets the role-swap pairs.
-- Fairer baseline: PCA of the pair differences, same ranks.
+## What the toy tasks tell me
 
-| Model | ACE | Pair-difference PCA | Unpaired PCA (yours) | Gradients only |
-|---|---:|---:|---:|---:|
-| GPT-2 Small | .608 | .653 | .747 | .850 |
-| GPT-2 Medium | .529 | .571 | .929 | .925 |
-| GPT-2 Large | .600 | .676 | .925 | .958 |
-| LLaMA-3.1-8B | .645 | .768 | 1.000 | .984 |
-| Gemma-2-9B | .686 | .834 | .969 | .955 |
+**Modular addition at the readout**
 
-*Removal AUC, your held-out frames and new names, your layers and ranks. Lower is better.*
+- At epoch 800 in the three CPU replicas, I held out each contiguous four-class block in turn. Median held-out R² for the true answer shift was .978, .890 and .939 with ACE, and .979, .891 and .933 with activation PCA. Scrambling class order gave negative medians in every seed. That’s good evidence for learned arithmetic geometry near grokking. [Holdout results](results/toy/toy_checks.log)
+- As §4 acknowledges, seeds can use different Fourier frequencies. At epoch 800, ACE, readout SVD, class means, PCA and the full state recovered the same occupied frequency bins within each seed in the paper’s held-out fit: 5, 7 and 8 bins respectively across seeds. My question is what this identifies about the computation beyond the geometry of the answers. [Basis comparison](results/toy/modadd_operator_bases.json)
+- Two facts help interpret the late fits. First, projecting onto the **centered** linear readout’s row space preserves all logit differences at any checkpoint. Removing it leaves only fixed bias differences. Second, if 53 class centroids are affinely independent, their centered span has dimension 52. On that full span, *any* cyclic ordering induces an exact linear map with all 26 nonzero frequency pairs. This applies to an unregularized fit using every transition. In the high-rank terminal replicas, shuffled cycles often recover most or all of those bins. The held-out ridge fit in the ACE core at the same checkpoints gives 16–18 bins. [Checkpoint results](results/toy/modadd_controls_wd1.json)
 
-- Pairing does most of the work. Gradients add a real gain, larger in the big models.
-- Neither half works alone in LLaMA or Gemma.
-- ACE flips with fewer dimensions. Gemma, rank 4: flip AUC .37 (ACE), .83 (pair-difference PCA).
+**One layer earlier**
 
-**Two-site map predicts an unseen intervention**
-
-- Best experiment in the paper (§6, Table A11): 61–87% of the END response explained, six models, held-out sentences and names.
-- Your saved results already show it beating a fixed signed direction.
-- Astra, three GPT-2 models: rotating the source side of a transferred map destroys the prediction.
-
-**Low-rank arithmetic near grokking**
-
-- Epoch 800, each block of answer classes held out in turn: median held-out R² .98, .89, .94.
-- Scrambled class order: negative.
-
-**One layer before the readout**
-
-- After long weight decay: a compact clock at layer 1. Necessity at 14 dims in all three models, 5–7 frequencies, held-out R² .94–.98. PCA misses it.
-- Just after grokking: ACE reaches necessity at 15–20 dims; class means 22–27; PCA over 100.
-
-## Where the story doesn't hold
+- At epoch 800, removing the first 15–20 ACE directions disrupted performance. How many directions also suffice when kept? I tested both criteria at the **same prefix**. With both token positions flattened, ACE needed 95, 105 and 127 dimensions across seeds. Gradient-only needed 23, 37 and 75. Editing just the last position gave the same ordering. The flattened-state intervention is an extra test I introduced. [Joint-rank check](results/toy/joint.log)
+- After 20,000 epochs of continued decay, all three models reached the removal threshold at ACE rank 14. At that rank, after matching centroid scales across layers, ACE recovered 5–7 frequencies with held-out R² of .94–.98. The class-mean basis recovered the same counts and similar fits. Ridge strength matters here because centroid scale changes substantially across layers. [Layer-one results](results/toy/modadd_layer1.json) · [Ridge check](results/toy/ridge.log)
+- The published decay-off branch also restarts AdamW at epoch 900. The extra branch scripts let us ask how much late broadening comes from decay under a matched optimizer restart. [Decay on, optimizer reset](controls/modadd_wd1_reset_branch.py) · [Decay off, optimizer retained](controls/modadd_wd0_keepopt_branch.py)
 
 **Markov**
 
-- The optimal predictor needs only the current token.
-- Random 4×64 lookup table, no transformer: spectral error .004. Trained ACE: .007.
-- `markov_null_ladder_12seed/results.json` has a centred-readout arm: keep .748, remove .249, error .009. Not in the figure. Appendix B.1 says only ACE and PCA pass.
+- A random lookup table for the current token recovers the transition spectrum with normalized error .004, compared with .007 for trained ACE. The observed sequence supplies the transitions. This limits what spectral recovery alone establishes about a learned algorithm. [Markov controls](results/toy/markov_controls.json)
+- There’s a separate positive result *inside the trained transformer*. Your saved centered-readout arm at rank three gives mean keep/remove accuracy .748/.249 and spectral error .009. I’d include it in Fig. A1 and qualify Appendix B.1’s “only ACE and PCA” line. [Author’s saved ladder, Readout-3 rows](https://github.com/joshseth/cores/blob/527948bb3573199d123d331cb2adc1e54647b317/supplement/markov_null_ladder_12seed/results.json)
 
-**Modular addition, last layer**
+**Grokking delay and coverage**
 
-- Linear head: keeping the readout row space reproduces the logits; removing it leaves constants. True before training.
-- Readout SVD, class means, PCA and the unprojected state give the same held-out operator as the ACE core.
-- 26 modes is forced past about 49 dims. Random relabelings of the classes also give 26.
-- Your held-out fit at the final epoch: 16–18. Logits: 18–21.
+- The modulus curve fits well at 50% training coverage. At fixed p = 53, the three-seed mean delay was about 4,200 steps at 40% coverage and 450 at 75%. [Coverage sweep](results/toy/grok_share.jsonl)
+- At p = 17 and 75% coverage, the three seeds first reached .99 test accuracy at steps 2,555, 3,209 and 3,029 under the paper’s first-crossing rule. Accuracy later dipped in every run. This limits the interpretation of the fitted cutoff as an absolute architectural floor. The fit at 50% coverage survives. [Training records, native trainer’s `paper_grok` field](results/toy/grok17.jsonl)
 
-**"Invariant", "converge"**
+**Subject–verb agreement**
 
-- Three seeds: 5, 7, 8 frequencies. Different sets at layer 1.
-- What is shared is the rotation, which is the task.
+- From your saved mixed-attractor runs, the difference of means scores better than ACE on keep, remove and flip in all six models under the paper’s directional scoring convention. LLaMA’s keep/remove/flip AUCs are .952/.608/.152 for the mean difference and .778/.683/.395 for ACE. On the original opposite-number prompts, ACE flips more strongly in all three saved GPT-2 comparisons. I’d show both protocols together. [Mixed-attractor table](https://github.com/joshseth/cores/blob/527948bb3573199d123d331cb2adc1e54647b317/supplement/outputs/21_sva_controls_table.md) · [Original-protocol results](https://github.com/joshseth/cores/tree/527948bb3573199d123d331cb2adc1e54647b317/experiments/sva)
 
-**Agreement** (your saved files; not rerun)
+## Experiments I’d be most interested in
 
-- Mixed-attractor prompts: difference of means beats ACE on keep, remove and flip in all six models. LLaMA: .952/.608/.152 against .778/.683/.395.
-- Opposite-number prompts: ACE flips better.
+1. **Equal search on IOI.** Give ACE and pair-difference SVD the same candidate layers, rank pairs and search budget. Freeze each choice and score on fresh names and frames, with paired uncertainty intervals across frames.
+2. **Freeze the map, change the edit.** Predict the downstream state and name-margin changes after partial swaps and writes orthogonal to the mean role difference. Compare with a fixed signed response and a rank-one map with input-dependent amplitude.
+3. **Test invariance in the sense of the earlier system-drift work.** Use a sequence task where two states can have the same immediate answer and different future answers. Fit one cross-model state alignment, freeze it, transplant states, and predict several outputs under different suffixes. That would give the shared-realization hypothesis a direct test.
 
-**Grokking law**
-
-- Fits well at 50% coverage.
-- p = 53: delay about 4,200 steps at 40% coverage, about 450 at 75%. No term for coverage.
-- p = 17, 75% coverage: three seeds first reach .99 test accuracy (not sustained). Below the fitted floor.
-
-**Open**
-
-- The no-decay branch restarts the optimizer at epoch 900; the decay arm does not. Late broadening could be either. Two missing arms are training.
-
-## A better story
-
-- Possible title: **"Balanced Truncation for Transformers: Small Causal Subspaces That Predict Interventions"**.
-- Lead with the IOI sentence pair, the swap, the prediction.
-- Pair-difference PCA beside ACE on the same page.
-- Toy tasks as calibration: one real low-rank shift, one diagnostic that succeeds for a simple reason (Markov).
-
-## Experiments worth running
-
-1. **Equal search.** My comparison used layers and ranks chosen for ACE. Same layer and rank search for every ordering, scored on fresh names.
-2. **Frozen map, new edits.** Partial swaps; writes off the mean role difference. Rank-one map and fixed response as baselines.
-3. **Transfer against a target-only fit.** GPT-2 test: carried map helped one way (.84 against .74), hurt the other (.23 against .61).
-4. **Invariance, as in the 2017 paper.** Sequence task where two hidden states give the same immediate answer and different futures. One alignment, transplanted states, predictions several steps ahead. A label code fails; a shared realisation passes.
-
-## Limits
-
-- 3 seeds for modular addition. CPU for toy tasks. One rented GPU for language models.
-- Qwen2.5-32B not run. Agreement not rerun.
-- Layer-1 "state" is both positions flattened; the paper never uses it.
-- Your operator fit's ridge term is not normalised to centroid size. I rescaled at layer 1; mode counts there move a little with that choice.
-- The p = 17 test and the GPT-2 transfer check are Astra's runs.
-
-The control scripts, saved results, and reproduction commands are on GitHub in [bubskee/ace-controls](https://github.com/bubskee/ace-controls).
+**Provenance.** These are AI-assisted controls. Claude helped run the initial experiments. Astra read the paper before inspecting the controls, audited the code, reran the toy analyses, and ran the p = 17 and small-pool transfer checks. There has been no independent human replication. The IOI table comes from five archived full-pool GPU runs. The GPT-2 transfer check used 29 extraction names. Qwen has no completed full-pool control here, and the agreement figures come from your saved files. [Scripts, recorded outputs and reproduction commands](README.md)
