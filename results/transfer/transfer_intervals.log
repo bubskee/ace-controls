@@ -1,0 +1,12 @@
+gpt2 to gpt2-medium carried, direct, own, rotated mean: 0.304 0.4908 0.5854 -0.2879
+carried minus direct, frame bootstrap 95%: [-0.264 -0.06 ]
+gpt2 to gpt2-large carried, direct, own, rotated mean: 0.2344 0.6144 0.6869 -0.2871
+carried minus direct, frame bootstrap 95%: [-0.462 -0.252]
+gpt2-medium to gpt2 carried, direct, own, rotated mean: 0.835 0.744 0.7941 -0.6757
+carried minus direct, frame bootstrap 95%: [0.044 0.165]
+gpt2-medium to gpt2-large carried, direct, own, rotated mean: 0.3216 0.6144 0.6869 -0.9883
+carried minus direct, frame bootstrap 95%: [-0.355 -0.198]
+gpt2-large to gpt2 carried, direct, own, rotated mean: 0.8023 0.744 0.7941 -0.5837
+carried minus direct, frame bootstrap 95%: [0.025 0.109]
+gpt2-large to gpt2-medium carried, direct, own, rotated mean: 0.4405 0.4908 0.5854 -1.104
+carried minus direct, frame bootstrap 95%: [-0.101  0.034]
