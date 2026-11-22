@@ -22,7 +22,7 @@ The entries are held-out two-name margin AUC after removing both subspaces. Chan
 
 ## Reproduce a comparison
 
-From the root of this repository, set up the author’s code in a Python environment. The upstream project declares its dependencies in its pyproject. The local CPU checks used Python 3.12, PyTorch 2.14.1, NumPy 2.5.4 and SciPy 1.18.1. GPU archives come from a separate environment.
+From the root of this repository, set up the author’s code in a Python environment. The upstream project declares its dependencies in its pyproject. The local CPU checks used Python 3.12, PyTorch 2.14.1, NumPy 2.5.4 and SciPy 1.18.1. The GPU archives come from a separate environment: Python 3.12, PyTorch 2.8.0 (CUDA 12.8), transformers 4.49.0, scikit-learn 1.9.1 and NLTK 3.10.4.
 
 ```sh
 git clone https://github.com/joshseth/cores.git cores
@@ -43,6 +43,17 @@ python checks/transfer_check.py --score-only
 python controls/ioi_ladder.py cores gpt2 gpt2 6:9 14:2 cuda runs/ioi_gpt2.json
 ```
 
+The other four archived runs used the commands below. The arguments after the output path are the data type, attention implementation, batch size and gradient batch size from the author’s notebook. LLaMA and Gemma are gated on Hugging Face.
+
+```sh
+python controls/ioi_ladder.py cores gpt2-medium gpt2-medium 12:20 12:37 cuda runs/ioi_gpt2-medium.json
+python controls/ioi_ladder.py cores gpt2-large gpt2-large 17:27 24:38 cuda runs/ioi_gpt2-large.json
+python controls/ioi_ladder.py cores meta-llama/Llama-3.1-8B llama-3.1-8b 8:23 32:35 cuda runs/ioi_llama.json bfloat16 none 64 8
+python controls/ioi_ladder.py cores google/gemma-2-9b gemma-2-9b 13:33 64:79 cuda runs/ioi_gemma.json bfloat16 eager 48 8
+```
+
+**The author’s own search reproduces.** Running the upstream `cores.ioi.golden` unchanged on GPT-2 Small in the GPU environment gave the same core ranks at both scanned layer pairs (7:10 and 6:9) as the author’s saved file, with every keep, remove, flip and swap score within .00002. The sweep’s preferred pair was 6:9 in the rerun and 7:10 in the saved file; the author’s saved control files use 6:9. [Rerun output](results/ioi/golden_rerun_gpt2.json) · [Author’s saved file](https://github.com/joshseth/cores/blob/527948bb3573199d123d331cb2adc1e54647b317/results/ioi/golden/gpt2/gpt2.json)
+
 ## Toy experiments
 
 | Question | Entry point |
@@ -61,9 +72,14 @@ python controls/markov_controls.py cores runs/markov.json
 MODADD_ARMS=wd1 python controls/modadd_controls.py cores runs/modadd.json 800 20000
 python checks/toy_checks.py
 python checks/layer1_joint.py
+
+# Optional: the two optimizer-restart controls fork from the epoch-900 checkpoint (about 40 CPU minutes each).
+(cd cores && python ../controls/modadd_wd1_reset_branch.py)
+(cd cores && python ../controls/modadd_wd0_keepopt_branch.py)
+MODADD_ARMS=wd1_reset,wd0_keepopt python controls/modadd_controls.py cores runs/modadd_restart.json 1000 2000 5000 10000 15000 20000
 ```
 
-The archived arithmetic measurements use three CPU-trained replicas. The two additional training scripts vary the optimizer restart at the epoch-900 fork. They are included for inspection; the results directory covers the original decay-on and decay-off branches. [Decay on, optimizer reset](controls/modadd_wd1_reset_branch.py) · [Decay off, optimizer retained](controls/modadd_wd0_keepopt_branch.py)
+The archived arithmetic measurements use three CPU-trained replicas. The two additional training scripts vary the optimizer restart at the epoch-900 fork. The results directory covers all four branches: the original decay-on and decay-off arms, and the two restart controls at six checkpoints. [Restart results](results/toy/modadd_controls_restart.json) [Decay on, optimizer reset](controls/modadd_wd1_reset_branch.py) · [Decay off, optimizer retained](controls/modadd_wd0_keepopt_branch.py)
 
 **Provenance.** These are independent, AI-assisted controls. The toy analyses reuse the upstream implementations and were rerun locally. The full-pool IOI table is read from archived GPU outputs. The small-pool transfer test was run locally on three GPT-2 sizes. The subject–verb agreement comparisons discussed separately come from the author’s saved files. In the archived grokking rows use `paper_mem` and `paper_grok` for the original trainer’s one-based steps. The auxiliary recorder was one step early for both crossings, leaving their difference intact. The public script corrects the counter and restores the evaluation hook between worker jobs. Selected toy JSON files retain Python’s NaN encoding for undefined fits.
 
